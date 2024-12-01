@@ -16,7 +16,7 @@ import time
 PEP-8 compliant.
 """
 
-pause = 1.5  # 1.5 when running, higher when testing
+pause = 1  # 1 when running, higher when testing
 
 try:
     df = pd.read_csv('symbol_sample.csv')
@@ -37,19 +37,21 @@ def getMSNID(df):
     driver.get('https://www.msn.com/en-us/money')
     old_url = 'https://www.msn.com/en-us/money'
     time.sleep(pause)
-    for i in range(df.shape[0]):
+    i = 0
+    while i < df.shape[0]:
         try:
             if i % 100 == 0:
                 print(i)
             leit = driver.find_element(By.XPATH,
                                        '//div[@id="searchBox"]/input')
+            leit.clear()
             leit.send_keys(df.loc[i, 'symbol'])
             time.sleep(pause)
             leit.send_keys(Keys.RETURN)
             time.sleep(pause)
             if old_url == driver.current_url:
                 msn_id.append('')
-                leit.clear()
+                i += 1
                 continue
             old_url = driver.current_url
             ticker = driver.find_element(By.XPATH, '//div[@id="fdc_header"]'
@@ -60,16 +62,15 @@ def getMSNID(df):
                     msn_id.append(driver.current_url.split('?id=')[1])
                 except IndexError:
                     msn_id.append('')
+            else:
+                msn_id.append('')
             time.sleep(pause)
+            i += 1
         except NoSuchElementException:
             print('nse', i)
-            msn_id.append('!ERROR')
-            driver.save_screenshot('driver_nse_' + str(i) + '.png')
             time.sleep(pause)
         except StaleElementReferenceException:
             print('ser', i)
-            msn_id.append('!ERROR')
-            driver.save_screenshot('driver_ser_' + str(i) + '.png')
             time.sleep(pause)
     driver.quit()
     df['msn_id'] = msn_id
