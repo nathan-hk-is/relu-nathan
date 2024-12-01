@@ -19,7 +19,7 @@ PEP-8 compliant.
 pause = 1  # 1 when running, higher when testing
 
 try:
-    df = pd.read_csv('symbol_sample.csv')
+    df = pd.read_csv('symbol_sample.csv', index_col=0)
 except FileNotFoundError:
     df = pd.read_parquet('symbol_sample.parquet')
     df.to_csv('symbol_sample.csv')
@@ -28,6 +28,8 @@ except FileNotFoundError:
 def getMSNID(df):
     """
     Scrape the MSN.com IDs of stocks.
+
+    Only works for NASDAQ, NYSE, and PNK.
     """
     if 'msn_id' in df.columns:
         return
@@ -77,5 +79,32 @@ def getMSNID(df):
     df.to_csv('symbol_sample.csv')
 
 
+def isOnYahoo(df):
+    """
+    Find whether each company is on Yahoo! Finance.
+    """
+    if 'on_yahoo' in df.columns:
+        return
+    on_yahoo = []
+    driver = webdriver.Chrome()
+    driver.maximize_window()
+    for i in range(df.shape[0]):
+        if i % 100 == 0:
+            print(i)
+        driver.get('https://finance.yahoo.com/lookup/?s=' +
+                   df.loc[i, 'symbol'])
+        time.sleep(pause)
+        try:
+            a = driver.find_element(By.XPATH, '//table[@data-testid='
+                                    '"table-container"]//a[@href="'
+                                    '/quote/' + df.loc[i, 'symbol'] + '/"]')
+            on_yahoo.append(True)
+        except NoSuchElementException:
+            on_yahoo.append(False)
+    driver.quit()
+    df['on_yahoo'] = on_yahoo
+    df.to_csv('symbol_sample.csv')
+
+
 if __name__ == '__main__':
-    getMSNID(df)
+    isOnYahoo(df)
