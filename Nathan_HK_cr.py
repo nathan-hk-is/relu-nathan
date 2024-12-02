@@ -1,6 +1,7 @@
 # Nathan HK
 # 2024-11-30
 
+import geopy
 import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -97,44 +98,87 @@ def isOnYahoo(df):
             on_yahoo.append(True)
         except NoSuchElementException:
             on_yahoo.append(False)
+        if 'on_yahoo' in df.columns and on_yahoo[-1] != df.loc[i, 'on_yahoo']:
+            print('UPDATE', i, df.loc[i, 'symbol'])
     driver.quit()
     df['on_yahoo'] = on_yahoo
     df.to_csv('symbol_sample.csv')
 
 
-def getWebsites(df):
+def getProfileInfo(df):
     """
-    Get the website URL of each company.
+    Get the street address and website URL of each company.
     """
     websites = []
+    addresses = []
+    lat = []
+    lon = []
     driver = webdriver.Chrome()
     driver.maximize_window()
+    geolocator = geopy.geocoders.Nominatim(user_agent='my_map')
     i = 0
     while i < df.shape[0]:
         if i % 100 == 0:
             print(i)
         if not df.loc[i, 'on_yahoo']:
             websites.append('')
+            addresses.append('')
+            lat.append('')
+            lon.append('')
             i += 1
             continue
         driver.get('https://finance.yahoo.com/quote/' + df.loc[i, 'symbol'] +
                    '/profile/')
         time.sleep(pause)
         try:
-            url = driver.find_element(By.XPATH, '//section[@data-testid='
-                                      '"asset-profile"]//a[@aria-label='
-                                      '"website link"]').text
-            websites.append(url)
+            data = driver.find_element(By.XPATH, '//section[@data-testid='
+                                       '"asset-profile"]')
         except NoSuchElementException:
-            print('NSE', i, df.loc[i, 'symbol'])
             websites.append('')
+            addresses.append('')
+            lat.append('')
+            lon.append('')
             driver.delete_all_cookies()
             driver.get('https://finance.yahoo.com/')
             time.sleep(pause)
+            i += 1
+            continue
+        try:
+            url = data.find_element(By.XPATH, './/a[@aria-label='
+                                    '"website link"]').text
+            websites.append(url)
+        except NoSuchElementException:
+            websites.append('')
+        try:
+            adiv = data.find_elements(By.XPATH, './/div[@class="address '
+                                      'yf-wxp4ja"]//div')
+            hfang = ''
+            for a in adiv:
+                hfang += a.text + ', '
+            hfang = hfang[:-2]
+            addresses.append(hfang)
+            try:
+                hnit = geolocator.geocode(hfang)
+                if hnit is None:
+                    lat.append('')
+                    lon.append('')
+                else:
+                    lat.append(hnit.latitude)
+                    lon.append(hnit.longitude)
+            except geopy.exc.GeocoderUnavailable:
+                lat.append('')
+                lon.append('')
+        except NoSuchElementException:
+            addresses.append('')
+            lat.append('')
+            lon.append('')
         i += 1
     df['website'] = websites
+    df['address'] = addresses
+    df['lat'] = lat
+    df['lon'] = lon
     df.to_csv('symbol_sample.csv')
 
 
 if __name__ == '__main__':
-    getWebsites(df)
+    getProfileInfo(df)
