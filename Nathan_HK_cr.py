@@ -16,7 +16,7 @@ import time
 PEP-8 compliant.
 """
 
-pause = 1  # 1 when running, higher when testing
+pause = 2  # 1 when running, higher when testing
 
 try:
     df = pd.read_csv('symbol_sample.csv', index_col=0)
@@ -31,8 +31,6 @@ def getMSNID(df):
 
     Only works for NASDAQ, NYSE, and PNK.
     """
-    if 'msn_id' in df.columns:
-        return
     msn_id = []
     driver = webdriver.Chrome()
     driver.maximize_window()
@@ -83,8 +81,6 @@ def isOnYahoo(df):
     """
     Find whether each company is on Yahoo! Finance.
     """
-    if 'on_yahoo' in df.columns:
-        return
     on_yahoo = []
     driver = webdriver.Chrome()
     driver.maximize_window()
@@ -106,5 +102,39 @@ def isOnYahoo(df):
     df.to_csv('symbol_sample.csv')
 
 
+def getWebsites(df):
+    """
+    Get the website URL of each company.
+    """
+    websites = []
+    driver = webdriver.Chrome()
+    driver.maximize_window()
+    i = 0
+    while i < df.shape[0]:
+        if i % 100 == 0:
+            print(i)
+        if not df.loc[i, 'on_yahoo']:
+            websites.append('')
+            i += 1
+            continue
+        driver.get('https://finance.yahoo.com/quote/' + df.loc[i, 'symbol'] +
+                   '/profile/')
+        time.sleep(pause)
+        try:
+            url = driver.find_element(By.XPATH, '//section[@data-testid='
+                                      '"asset-profile"]//a[@aria-label='
+                                      '"website link"]').text
+            websites.append(url)
+        except NoSuchElementException:
+            print('NSE', i, df.loc[i, 'symbol'])
+            websites.append('')
+            driver.delete_all_cookies()
+            driver.get('https://finance.yahoo.com/')
+            time.sleep(pause)
+        i += 1
+    df['website'] = websites
+    df.to_csv('symbol_sample.csv')
+
+
 if __name__ == '__main__':
-    isOnYahoo(df)
+    getWebsites(df)
