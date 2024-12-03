@@ -196,17 +196,47 @@ def getProfileInfo(df):
 def dataByCountry(df):
     """
     Get data from individual countries' websites.
+    
+    Countries where it works:
+    - US: https://www.sec.gov/search-filings
+        - works to get IDs
+        - forms not tested
+        
+    Countries in progress:
+    - BR: https://dados.gov.br/home
+    
+    Countries where it doesn't work:
+    - AU: https://connectonline.asic.gov.au/RegistrySearch/
+        - can't verify ticker
+        - documents behind paywall
+    - CA: https://www.sedarplus.ca/landingpage/
+        - bot-proof
+        - documents are PDF only
+    - SE: https://finanscentralen.fi.se/search/search.aspx
+        - can't verify ticker
+        - filings are all in different formats, chosen by company
+        
+    Countries where I can't find the website with filings:
+    - CH
+    - DE
+    - DK
+    - HK
+    - JP
+    - KR
+    - PL
     """
-    gov_id_us = []  # SEC CIK ID
+    gov_id = {'us': []}
     driver = webdriver.Chrome()
     driver.maximize_window()
+    
+    # US
     driver.get('https://www.sec.gov/search-filings')
     leit = driver.find_element(By.XPATH,
                                '//input[@id="edgar-company-person"]')
     for i in range(df.shape[0]):
         if i % 100 == 0:
             print(i)
-        if df.loc[i, 'exchange_short_name'] in ['NASDAQ', 'NYSE']:
+        if df.loc[i, 'exchange_short_name'] in ['AMEX', 'NASDAQ', 'NYSE']:
             leit.clear()
             leit.send_keys(df.loc[i, 'symbol'])
             time.sleep(pause)
@@ -220,20 +250,23 @@ def dataByCountry(df):
                     ticks = a.text[:-1].split('(')[1].split(', ')
                     if df.loc[i, 'symbol'] in ticks:
                         hr = a.get_attribute('href')
-                        gov_id_us.append(hr.split('&')[0].split('?CIK=')[1])
+                        gov_id['us'].append(hr.split('&')[0].
+                                            split('?CIK=')[1])
                         f = True
                         break
             if not f:
-                gov_id_us.append('')
+                gov_id['us'].append('')
             leit.clear()
             time.sleep(pause)
         else:
-            gov_id_us.append('')
-    df['gov_id_us'] = gov_id_us
+            gov_id['us'].append('')
+    for a in gov_id:
+        df['gov_id_' + a] = gov_id[a]
     df.to_csv('symbol_sample.csv')
 
 
 if __name__ == '__main__':
+    print(df['exchange_short_name'].value_counts())
     if len(sys.argv) < 2:
         print('ERROR! Must include function name.')
     elif sys.argv[1] == 'isOnYahoo':
