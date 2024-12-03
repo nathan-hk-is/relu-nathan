@@ -11,18 +11,22 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.common.exceptions import NoSuchElementException
 from selenium.common.exceptions import StaleElementReferenceException
+import sys
 import time
 
 """
+Command-line arguments:
+1. Name of function to run
+
 PEP-8 compliant.
 """
 
-pause = 2  # 1 when running, higher when testing
+pause = 2  # 2 when running, higher when testing
 
 try:
     df = pd.read_csv('symbol_sample.csv', index_col=0)
 except FileNotFoundError:
-    df = pd.read_parquet('symbol_sample.parquet')
+    df = pd.read_parquet('symbol_sample2.parquet')
     df.to_csv('symbol_sample.csv')
 
 
@@ -152,13 +156,22 @@ def getProfileInfo(df):
         try:
             adiv = data.find_elements(By.XPATH, './/div[@class="address '
                                       'yf-wxp4ja"]//div')
-            hfang = ''
+            hfang = ''  # Write to CSV
+            hfang_l = ''  # Look up lat/lon
             for a in adiv:
                 hfang += a.text + ', '
+                if a.text[:6] == 'Suite ':
+                    continue
+                elif a.text[:5] == 'Unit ':
+                    continue
+                if a.text[:6] == 'Level ':
+                    continue
+                hfang_l += a.text + ', '
             hfang = hfang[:-2]
+            hfang_l = hfang_l[:-2]
             addresses.append(hfang)
             try:
-                hnit = geolocator.geocode(hfang)
+                hnit = geolocator.geocode(hfang_l)
                 if hnit is None:
                     lat.append('')
                     lon.append('')
@@ -173,12 +186,61 @@ def getProfileInfo(df):
             lat.append('')
             lon.append('')
         i += 1
-    df['website'] = websites
-    df['address'] = addresses
+    df['website_yahoo'] = websites
+    df['address_yahoo'] = addresses
     df['lat'] = lat
     df['lon'] = lon
     df.to_csv('symbol_sample.csv')
 
 
+def dataByCountry(df):
+    """
+    Get data from individual countries' websites.
+    """
+    gov_id_us = []  # SEC CIK ID
+    driver = webdriver.Chrome()
+    driver.maximize_window()
+    driver.get('https://www.sec.gov/search-filings')
+    leit = driver.find_element(By.XPATH,
+                               '//input[@id="edgar-company-person"]')
+    for i in range(df.shape[0]):
+        if i % 100 == 0:
+            print(i)
+        if df.loc[i, 'exchange_short_name'] in ['NASDAQ', 'NYSE']:
+            leit.clear()
+            leit.send_keys(df.loc[i, 'symbol'])
+            time.sleep(pause)
+            with open('tempf.html', 'w') as outfile:
+                outfile.write(driver.page_source)
+            xp = '//table[@class="smart-search-entity-hints"]//a'
+            links = driver.find_elements(By.XPATH, xp)
+            f = False
+            for a in links:
+                if '(' in a.text and a.text[-1] == ')':
+                    ticks = a.text[:-1].split('(')[1].split(', ')
+                    if df.loc[i, 'symbol'] in ticks:
+                        hr = a.get_attribute('href')
+                        gov_id_us.append(hr.split('&')[0].split('?CIK=')[1])
+                        f = True
+                        break
+            if not f:
+                gov_id_us.append('')
+            leit.clear()
+            time.sleep(pause)
+        else:
+            gov_id_us.append('')
+    df['gov_id_us'] = gov_id_us
+    df.to_csv('symbol_sample.csv')
+
+
 if __name__ == '__main__':
-    getProfileInfo(df)
+    if len(sys.argv) < 2:
+        print('ERROR! Must include function name.')
+    elif sys.argv[1] == 'isOnYahoo':
+        isOnYahoo(df)
+    elif sys.argv[1] == 'getProfileInfo':
+        getProfileInfo(df)
+    elif sys.argv[1] == 'dataByCountry':
+        dataByCountry(df)
+    else:
+        print('ERROR! Invalid function name.')
