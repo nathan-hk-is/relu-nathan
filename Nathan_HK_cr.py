@@ -12,8 +12,10 @@ from selenium.webdriver.support.ui import Select
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.common.exceptions import ElementClickInterceptedException
+from selenium.common.exceptions import NoSuchAttributeException
 from selenium.common.exceptions import NoSuchElementException
 from selenium.common.exceptions import StaleElementReferenceException
+from selenium.common.exceptions import TimeoutException
 from selenium.common.exceptions import WebDriverException
 import sys
 import time
@@ -270,42 +272,51 @@ def dataByCountry(df):
 
 
 def findNewsPage(df):
+    byrjun = time.time()
     news_pages = []
     driver = webdriver.Chrome()
     driver.maximize_window()
     for i in range(df.shape[0]):
         if i % 100 == 0:
-            print(i)
+            print(i, time.time() - byrjun)
         if type(df.loc[i, 'website']) is not str:  # No web address
             news_pages.append('')
             continue
+        if len(driver.window_handles) > 1:
+            driver.quit()
+            driver = webdriver.Chrome()
+            driver.maximize_window()
         if df.loc[i, 'website'][-1] == '/':
             slash = ''
         else:
             slash = '/'
-        for a in ['news', 'press', 'newsroom', 'company-news']:
+        for a in ['news', 'press', 'newsroom', 'company-news', 'media']:
             turl = df.loc[i, 'website'] + slash + a
             # Get static HTML page
             try:
                 svar = requests.get(turl, timeout=pause * 10)
             except requests.exceptions.SSLError:
-                print('SSL ERROR', i, df.loc[i, 'symbol'], a)
-                continue
+                print('SSL ERROR', i, df.loc[i, 'symbol'])
+                break
             except requests.exceptions.Timeout:
-                print('TIMEOUT', i, df.loc[i, 'symbol'], a)
-                continue
+                print('TIMEOUT', i, df.loc[i, 'symbol'])
+                break
             except requests.exceptions.ConnectionError:
-                print('CONNECTION ERROR', i, df.loc[i, 'symbol'], a)
-                continue
+                print('CONNECTION ERROR', i, df.loc[i, 'symbol'])
+                break
             except requests.exceptions.MissingSchema:
-                print('MISSING SCHEMA', i, df.loc[i, 'symbol'], a)
+                print('MISSING SCHEMA', i, df.loc[i, 'symbol'])
                 news_pages.append('')
                 break
+            except requests.exceptions.TooManyRedirects:
+                print('REDIRECTS', i, df.loc[i, 'symbol'])
+                break
+            except requests.exceptions.ChunkedEncodingError:
+                print('CHUNK', i, df.loc[i, 'symbol'])
+                break
             # Find true URL
-            if str(svar.status_code)[0] in '123':  # Success
-                driver.get(turl)
-                time.sleep(pause)
-                news_pages.append(driver.current_url)
+            if str(svar.status_code)[0] in '123':  # Success or redirect
+                news_pages.append(svar.url)
                 break
             elif str(svar.status_code)[0] == '4':  # Client error
                 continue
@@ -315,45 +326,83 @@ def findNewsPage(df):
                 break
         if len(news_pages) > i:
             continue
-        try:
-            driver.get(df.loc[i, 'website'] + slash + 'ekki_gilt_url')  # 404 page
-            time.sleep(pause)
-        except WebDriverException:
-            print('WDE', i, df.loc[i, 'symbol'])
-            news_pages.append('')
-            continue
-        old_url = driver.current_url
-        # Accept cookies
-        bts = driver.find_elements(By.XPATH, '//button')
-        cookie_text = ['accept all', 'accept all cookies', 'accept cookies',
-                       'i accept', 'allow cookies', 'allow all cookies']
-        for b in bts:
-            if b.text.strip().lower() in cookie_text:
+        url_list = [df.loc[i, 'website'] + slash + 'ekki_gilt_url',  # 404
+                    df.loc[i, 'website']]  # Home page
+        for url in url_list:
+            if url != '':
                 try:
-                    b.click()
+                    driver.get(url)
                     time.sleep(pause)
-                    break
-                except ElementClickInterceptedException:
-                    continue
-        # Find links
-        alist = driver.find_elements(By.XPATH, '//a')
-        news_text = ['news', 'press', 'newsroom', 'press room',
-                     'company news', 'press releases']
-        for a in alist:
-            if a.text.strip().lower() in news_text:
-                try:
-                    a.click()
-                    time.sleep(pause)
-                except ElementClickInterceptedException:
+                    old_url = driver.current_url
+                except WebDriverException:
+                    print('WDE', i, df.loc[i, 'symbol'])
                     news_pages.append('')
                     break
-                if driver.current_url != old_url:
-                    news_pages.append(driver.current_url)
-                    break
+            # Accept cookies
+            bts = driver.find_elements(By.XPATH, '//button')
+            cookie_text = ['accept all', 'accept all cookies',
+                           'accept cookies', 'i accept', 'allow cookies',
+                           'allow all cookies']
+            for b in bts:
+                if b.text.strip().lower() in cookie_text:
+                    try:
+                        b.click()
+                        time.sleep(pause)
+                        break
+                    except ElementClickInterceptedException:
+                        continue
+            # Find links
+            alist = driver.find_elements(By.XPATH, '//a')
+            news_text = ['news', 'press', 'newsroom', 'press room',
+                         'company news', 'press releases', 'news & media',
+                         'news and media', 'media releases', 'media',
+                         'news and events', 'news & events']
+            for a in alist:
+                try:
+                    if a.text.strip().lower() in news_text:
+                        try:
+                            a.click()
+                            time.sleep(pause)
+                        except ElementClickInterceptedException:
+                            news_pages.append('')
+                            break
+                        if driver.current_url != old_url:
+                            news_pages.append(driver.current_url)
+                            break
+                except StaleElementReferenceException:
+                    continue
+            if len(news_pages) > i:
+                break
+            if url == df.loc[i, 'website']:
+                try:
+                    lang = driver.find_element(By.XPATH, '/html'). \
+                           get_attribute('lang')
+                    if lang == 'en' or lang[:3] == 'en-':
+                        break
+                    else:
+                        f = False
+                        for a in driver.find_elements(By.XPATH, '//a'):
+                            if a.text.strip().lower() in ['eng', 'english']:
+                                try:
+                                    a.click()
+                                    time.sleep(pause)
+                                    f = True
+                                    url_list.append('')
+                                    break
+                                except ElementClickInterceptedException:
+                                    continue
+                        if not f:
+                            url_list.append(df.loc[i, 'website'] + slash +
+                                            'en')
+                except NoSuchAttributeException:
+                    url_list.append(df.loc[i, 'website'] + slash + 'en')
+                except NoSuchElementException:
+                    url_list.append(df.loc[i, 'website'] + slash + 'en')
         if len(news_pages) == i:
             news_pages.append('')
     df['news_page'] = news_pages
     df.to_csv('symbol_sample.csv')
+    print(time.time() - byrjun)
 
 
 if __name__ == '__main__':
