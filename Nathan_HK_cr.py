@@ -1,6 +1,7 @@
 # Nathan HK
 # 2024-11-30
 
+from bs4 import BeautifulSoup
 import geopy
 import numpy as np
 import pandas as pd
@@ -276,9 +277,10 @@ def findNewsPage(df):
     news_pages = []
     driver = webdriver.Chrome()
     driver.maximize_window()
+    findtype = {1: 0, 2: 0, 3: 0}
     for i in range(df.shape[0]):
         if i % 100 == 0:
-            print(i, time.time() - byrjun)
+            print(i, time.time() - byrjun, findtype)
         if type(df.loc[i, 'website']) is not str:  # No web address
             news_pages.append('')
             continue
@@ -290,44 +292,130 @@ def findNewsPage(df):
             slash = ''
         else:
             slash = '/'
-        for a in ['news', 'press', 'newsroom', 'company-news', 'media']:
+        skipRBS = False
+        url_list = [df.loc[i, 'website']]  # Home page
+        news_text = ['news', 'press', 'newsroom', 'press room',
+                     'company news', 'press releases', 'news & media',
+                     'news and media', 'media releases', 'media',
+                     'news and events', 'news & events']
+        # Python requests / BeautifulSoup
+        for url in url_list:
+            if skipRBS:
+                break
+            try:
+                svar = requests.get(url, timeout=pause * 10)
+            except requests.exceptions.SSLError:
+                print('SSL ERROR A', i, df.loc[i, 'symbol'])
+                skipRBS = True
+                break
+            except requests.exceptions.Timeout:
+                print('TIMEOUT A', i, df.loc[i, 'symbol'])
+                skipRBS = True
+                break
+            except requests.exceptions.ConnectionError:
+                print('CONNECTION ERROR A', i, df.loc[i, 'symbol'])
+                skipRBS = True
+                break
+            except requests.exceptions.MissingSchema:
+                print('MISSING SCHEMA A', i, df.loc[i, 'symbol'])
+                skipRBS = True
+                news_pages.append('')
+                break
+            except requests.exceptions.TooManyRedirects:
+                print('REDIRECTS A', i, df.loc[i, 'symbol'])
+                break
+            except requests.exceptions.ChunkedEncodingError:
+                print('CHUNK A', i, df.loc[i, 'symbol'])
+                break
+            # Find true URL
+            if str(svar.status_code)[0] in '123':  # Success or redirect
+                webpage = BeautifulSoup(svar.content, 'html.parser')
+                en_needed = False
+                if url == df.loc[i, 'website']:
+                    try:
+                        lang = webpage.find('html')['lang']
+                        if lang == 'en' or lang[:3] == 'en-':
+                            pass
+                        else:
+                            url_list.append(df.loc[i, 'website'] + slash +
+                                            'en')
+                            en_needed = True
+                    except AttributeError:
+                        url_list.append(df.loc[i, 'website'] + slash + 'en')
+                    except KeyError:
+                        url_list.append(df.loc[i, 'website'] + slash + 'en')
+                    except TypeError:
+                        url_list.append(df.loc[i, 'website'] + slash + 'en')
+                alist = webpage.find_all('a')
+                for a in alist:
+                    try:
+                        if a.getText().strip().lower() in news_text:
+                            if a['href'][:8] == 'https://':
+                                news_pages.append(a['href'])
+                            elif a['href'][0] == '/':
+                                news_pages.append('https://' + svar.url.
+                                                  split('/')[2] + a['href'])
+                            findtype[1] += 1
+                            break
+                        elif en_needed and (a.getText().strip().lower() in
+                                            ['eng', 'english']):
+                            if a['href'][:8] == 'https://':
+                                url_list[1] = a['href']
+                            elif a['href'][0] == '/':
+                                url_list[1] = ('https://' + svar.url.
+                                               split('/')[2] + a['href'])
+                            en_needed = False
+                    except AttributeError:
+                        continue
+                    except KeyError:  # no href
+                        continue
+                    except IndexError:  # href is empty string
+                        continue
+                if len(news_pages) > i:
+                    break
+            else:  # Client or server error
+                continue
+        if len(news_pages) > i:
+            continue
+        # Common URLs
+        for a in ['news', 'press', 'newsroom', 'company-news', 'media',
+                  'press-releases', 'news-press-releases']:
+            if skipRBS:
+                break
             turl = df.loc[i, 'website'] + slash + a
             # Get static HTML page
             try:
                 svar = requests.get(turl, timeout=pause * 10)
             except requests.exceptions.SSLError:
-                print('SSL ERROR', i, df.loc[i, 'symbol'])
+                print('SSL ERROR B', i, df.loc[i, 'symbol'])
                 break
             except requests.exceptions.Timeout:
-                print('TIMEOUT', i, df.loc[i, 'symbol'])
+                print('TIMEOUT B', i, df.loc[i, 'symbol'])
                 break
             except requests.exceptions.ConnectionError:
-                print('CONNECTION ERROR', i, df.loc[i, 'symbol'])
+                print('CONNECTION ERROR B', i, df.loc[i, 'symbol'])
                 break
             except requests.exceptions.MissingSchema:
-                print('MISSING SCHEMA', i, df.loc[i, 'symbol'])
+                print('MISSING SCHEMA B', i, df.loc[i, 'symbol'])
                 news_pages.append('')
                 break
             except requests.exceptions.TooManyRedirects:
-                print('REDIRECTS', i, df.loc[i, 'symbol'])
+                print('REDIRECTS B', i, df.loc[i, 'symbol'])
                 break
             except requests.exceptions.ChunkedEncodingError:
-                print('CHUNK', i, df.loc[i, 'symbol'])
+                print('CHUNK B', i, df.loc[i, 'symbol'])
                 break
             # Find true URL
             if str(svar.status_code)[0] in '123':  # Success or redirect
                 news_pages.append(svar.url)
+                findtype[2] += 1
                 break
-            elif str(svar.status_code)[0] == '4':  # Client error
+            else:  # Client or server error
                 continue
-            elif str(svar.status_code)[0] == '5':  # Server error
-                print('SERVER ERROR', i, df.loc[i, 'symbol'])
-                news_pages.append('')
-                break
         if len(news_pages) > i:
             continue
-        url_list = [df.loc[i, 'website'] + slash + 'ekki_gilt_url',  # 404
-                    df.loc[i, 'website']]  # Home page
+        # Selenium
+        url_list = [df.loc[i, 'website']]  # Home page
         for url in url_list:
             if url != '':
                 try:
@@ -342,7 +430,7 @@ def findNewsPage(df):
             bts = driver.find_elements(By.XPATH, '//button')
             cookie_text = ['accept all', 'accept all cookies',
                            'accept cookies', 'i accept', 'allow cookies',
-                           'allow all cookies']
+                           'allow all cookies', 'i accept cookies']
             for b in bts:
                 if b.text.strip().lower() in cookie_text:
                     try:
@@ -353,10 +441,6 @@ def findNewsPage(df):
                         continue
             # Find links
             alist = driver.find_elements(By.XPATH, '//a')
-            news_text = ['news', 'press', 'newsroom', 'press room',
-                         'company news', 'press releases', 'news & media',
-                         'news and media', 'media releases', 'media',
-                         'news and events', 'news & events']
             for a in alist:
                 try:
                     if a.text.strip().lower() in news_text:
@@ -368,6 +452,7 @@ def findNewsPage(df):
                             break
                         if driver.current_url != old_url:
                             news_pages.append(driver.current_url)
+                            findtype[3] += 1
                             break
                 except StaleElementReferenceException:
                     continue
