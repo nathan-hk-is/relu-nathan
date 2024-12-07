@@ -273,17 +273,26 @@ def dataByCountry(df):
 
 
 def findNewsPage(df):
+    """
+    For a company, find the "news" or "press releases" page on the website.
+
+    Assumptions:
+    - HTML "lang" parameter is always correct.
+    - All hrefs on a website are valid.
+    """
     byrjun = time.time()
     news_pages = []
     driver = webdriver.Chrome()
     driver.maximize_window()
-    findtype = {1: 0, 2: 0, 3: 0}
+    findtype = [0, 0, 0]
+    timetype = [0.0, 0.0, 0.0]
     for i in range(df.shape[0]):
         if i % 100 == 0:
-            print(i, time.time() - byrjun, findtype)
+            print(i, time.time() - byrjun, findtype, timetype)
         if type(df.loc[i, 'website']) is not str:  # No web address
             news_pages.append('')
             continue
+        tegbyr = time.time()
         if len(driver.window_handles) > 1:
             driver.quit()
             driver = webdriver.Chrome()
@@ -355,7 +364,7 @@ def findNewsPage(df):
                             elif a['href'][0] == '/':
                                 news_pages.append('https://' + svar.url.
                                                   split('/')[2] + a['href'])
-                            findtype[1] += 1
+                            findtype[0] += 1
                             break
                         elif en_needed and (a.getText().strip().lower() in
                                             ['eng', 'english']):
@@ -375,9 +384,11 @@ def findNewsPage(df):
                     break
             else:  # Client or server error
                 continue
+        timetype[0] += time.time() - tegbyr
         if len(news_pages) > i:
             continue
         # Common URLs
+        tegbyr = time.time()
         for a in ['news', 'press', 'newsroom', 'company-news', 'media',
                   'press-releases', 'news-press-releases']:
             if skipRBS:
@@ -408,13 +419,15 @@ def findNewsPage(df):
             # Find true URL
             if str(svar.status_code)[0] in '123':  # Success or redirect
                 news_pages.append(svar.url)
-                findtype[2] += 1
+                findtype[1] += 1
                 break
             else:  # Client or server error
                 continue
+        timetype[1] += time.time() - tegbyr
         if len(news_pages) > i:
             continue
         # Selenium
+        tegbyr = time.time()
         url_list = [df.loc[i, 'website']]  # Home page
         for url in url_list:
             if url != '':
@@ -444,17 +457,21 @@ def findNewsPage(df):
             for a in alist:
                 try:
                     if a.text.strip().lower() in news_text:
-                        try:
-                            a.click()
-                            time.sleep(pause)
-                        except ElementClickInterceptedException:
-                            news_pages.append('')
-                            break
-                        if driver.current_url != old_url:
-                            news_pages.append(driver.current_url)
-                            findtype[3] += 1
-                            break
+                        href = a.get_attribute('href')
+                        if href[:8] == 'https://':
+                            news_pages.append(href)
+                        elif href[0] == '/':
+                            news_pages.append('https://' + svar.url.
+                                              split('/')[2] + href)
+                        findtype[2] += 1
+                        break
+                except NoSuchAttributeException:
+                    continue
                 except StaleElementReferenceException:
+                    continue
+                except TypeError:
+                    continue
+                except IndexError:
                     continue
             if len(news_pages) > i:
                 break
@@ -485,6 +502,7 @@ def findNewsPage(df):
                     url_list.append(df.loc[i, 'website'] + slash + 'en')
         if len(news_pages) == i:
             news_pages.append('')
+        timetype[2] += time.time() - tegbyr
     df['news_page'] = news_pages
     df.to_csv('symbol_sample.csv')
     print(time.time() - byrjun)
