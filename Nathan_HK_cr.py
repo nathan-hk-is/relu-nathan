@@ -518,8 +518,14 @@ def getReportsPage(df):
         if type(df.loc[i, 'website']) is not str:
             reports_pages.append('')
             continue
+        if df.loc[i, 'website'][:8] == 'https://':
+            web_by = df.loc[i, 'website'].split('/')[2]
+        else:
+            web_by = df.loc[i, 'website']
+        if web_by[:4] == 'www.':
+            web_by = web_by[4:]
         driver.get('https://duckduckgo.com/?q=annual+financial+report+site:' +
-                   df.loc[i, 'website'])
+                   web_by)
         xp = '//ol[@class="react-results--main"]/li[@data-layout="organic"]'
         results = driver.find_elements(By.XPATH, xp)
         for wpage in results:
