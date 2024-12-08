@@ -508,6 +508,41 @@ def findNewsPage(df):
     print(time.time() - byrjun)
 
 
+def getReportsPage(df):
+    byrjun = time.time()
+    driver = webdriver.Chrome()
+    driver.maximize_window()
+    reports_pages = []
+    rphr = ['annual reports', 'financial reports']
+    for i in range(df.shape[0]):
+        if type(df.loc[i, 'website']) is not str:
+            reports_pages.append('')
+            continue
+        driver.get('https://duckduckgo.com/?q=annual+financial+report+site:' +
+                   df.loc[i, 'website'])
+        xp = '//ol[@class="react-results--main"]/li[@data-layout="organic"]'
+        results = driver.find_elements(By.XPATH, xp)
+        for wpage in results:
+            try:
+                a = wpage.find_element(By.XPATH, './/h2/a')
+                href = a.get_attribute('href')
+            except NoSuchAttributeException:
+                continue
+            except NoSuchElementException:
+                continue
+            for p in rphr:
+                if p in a.text.lower():
+                    reports_pages.append(href)
+                    break
+            if len(reports_pages) > i:
+                break
+        if len(reports_pages) == i:
+            reports_pages.append('')
+    df['reports_page'] = reports_pages
+    df.to_csv('symbol_sample.csv')
+    print(time.time() - byrjun)
+
+
 if __name__ == '__main__':
     if len(sys.argv) < 2:
         print('ERROR! Must include function name.')
@@ -519,5 +554,7 @@ if __name__ == '__main__':
         dataByCountry(df)
     elif sys.argv[1] == 'findNewsPage':
         findNewsPage(df)
+    elif sys.argv[1] == 'getReportsPage':
+        getReportsPage(df)
     else:
         print('ERROR! Invalid function name.')
