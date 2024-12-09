@@ -513,11 +513,22 @@ def getReportsPage(df):
     driver = webdriver.Chrome()
     driver.maximize_window()
     reports_pages = []
-    rphr = ['annual reports', 'financial reports']
+    rpby = {}
+    rphr_s = ['annual report', 'financial report']
+    rphr_p = ['annual reports', 'financial reports']
     for i in range(df.shape[0]):
+        if i % 100 == 0:
+            print(i)
         if type(df.loc[i, 'website']) is not str:
             reports_pages.append('')
             continue
+        year_range = range(int(df.loc[i, 'min_date'][:4]),
+                           int(df.loc[i, 'max_date'][:4]) + 1)
+        for y in year_range:
+            try:
+                rpby[y]
+            except KeyError:
+                rpby[y] = {}
         if df.loc[i, 'website'][:8] == 'https://':
             web_by = df.loc[i, 'website'].split('/')[2]
         else:
@@ -536,15 +547,33 @@ def getReportsPage(df):
                 continue
             except NoSuchElementException:
                 continue
-            for p in rphr:
+            for p in rphr_p:
                 if p in a.text.lower():
                     reports_pages.append(href)
                     break
+            for y in year_range:
+                for p in rphr_s:
+                    if str(y) + ' ' + p in a.text.lower() or \
+                       p + ' ' + str(y) in a.text.lower():
+                        rpby[y][i] = href
+                        break
             if len(reports_pages) > i:
                 break
         if len(reports_pages) == i:
             reports_pages.append('')
     df['reports_page'] = reports_pages
+    for year in range(min(rpby), max(rpby) + 1):
+        try:
+            rpby[year]
+        except KeyError:
+            rpby[year] = {}
+        by_temp = []
+        for i in range(df.shape[0]):
+            try:
+                by_temp.append(rpby[year][i])
+            except KeyError:
+                by_temp.append('')
+        df['report_' + str(year)] = by_temp
     df.to_csv('symbol_sample.csv')
     print(time.time() - byrjun)
 
