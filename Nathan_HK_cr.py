@@ -539,8 +539,21 @@ def getReportsPage(df):
             web_by = web_by[4:]
         driver.get('https://duckduckgo.com/?q=annual+financial+report+site:' +
                    web_by)
+        time.sleep(pause / 5)
         xp = '//ol[@class="react-results--main"]/li[@data-layout="organic"]'
-        results = driver.find_elements(By.XPATH, xp)
+        # Wait to load
+        while True:
+            results = driver.find_elements(By.XPATH, xp)
+            if len(results) > 0:
+                break
+            try:
+                par = driver.find_element(By.XPATH, '//p[@class='
+                                          '"w7syQmNN6Yjvw6guGJuQ"]')
+                if 'No results found' in par.text:
+                    break
+            except NoSuchElementException:
+                pass
+            time.sleep(pause / 5)
         for wpage in results:
             try:
                 a = wpage.find_element(By.XPATH, './/h2/a')
