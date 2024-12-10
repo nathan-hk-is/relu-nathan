@@ -514,8 +514,10 @@ def getReportsPage(df):
     driver.maximize_window()
     reports_pages = []
     rpby = {}
-    rphr_s = ['annual report', 'financial report']
-    rphr_p = ['annual reports', 'financial reports']
+    rphr_s = ['annual report', 'integrated report', 'financial report',
+              'annual results', 'financial results']
+    rphr_p = ['annual reports', 'integrated reports', 'financial reports',
+              'reports - ', 'reports | ']
     for i in range(df.shape[0]):
         if i % 100 == 0:
             print(i)
@@ -574,6 +576,24 @@ def getReportsPage(df):
             except KeyError:
                 by_temp.append('')
         df['report_' + str(year)] = by_temp
+    has_any = []
+    for i in range(df.shape[0]):
+        f = False
+        if type(df.loc[i, 'news_page']) is str and \
+           df.loc[i, 'news_page'] != '':
+            has_any.append(True)
+            continue
+        if type(df.loc[i, 'reports_page']) is str and \
+           df.loc[i, 'reports_page'] != '':
+            has_any.append(True)
+            continue
+        for y in range(min(rpby), max(rpby) + 1):
+            if type(df.loc[i, 'report_' + str(y)]) is str and \
+               df.loc[i, 'report_' + str(y)] != '':
+                f = True
+                break
+        has_any.append(f)
+    df['any_subweb'] = has_any
     df.to_csv('symbol_sample.csv')
     print(time.time() - byrjun)
 
