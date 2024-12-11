@@ -565,10 +565,17 @@ def getReportsPage(df):
             except NoSuchElementException:
                 continue
             for p in rphr_p:
+                if len(reports_pages) > i:
+                    break
                 if p in a.text.lower():
                     reports_pages.append(href)
                     break
             for y in year_range:
+                try:
+                    rpby[y][i]
+                    break
+                except KeyError:
+                    pass
                 for p in rphr_s:
                     if str(y) + ' ' + p in a.text.lower() or \
                        p + ' ' + str(y) in a.text.lower():
@@ -578,6 +585,11 @@ def getReportsPage(df):
                 snip = wpage.find_element(By.XPATH, './/div[@data-result='
                                           '"snippet"]').text.split('.')[0]
                 for y in year_range:
+                    try:
+                        rpby[y][i]
+                        break
+                    except KeyError:
+                        pass
                     for p in rphr_s:
                         if str(y) + ' ' + p == snip.lower() or \
                            p + ' ' + str(y) == snip.lower():
@@ -585,6 +597,25 @@ def getReportsPage(df):
                             break
             except NoSuchElementException:
                 continue
+            mod_href = href.lower().replace('%20', ' ').\
+                replace('_', ' ').replace('-', ' ')
+            for p in rphr_p:
+                if len(reports_pages) > i:
+                    break
+                if p in mod_href:
+                    reports_pages.append(href)
+                    break
+            for y in year_range:
+                try:
+                    rpby[y][i]
+                    break
+                except KeyError:
+                    pass
+                for p in rphr_s:
+                    if str(y) + ' ' + p in mod_href or \
+                       p + ' ' + str(y) in mod_href:
+                        rpby[y][i] = href
+                        break
         if len(reports_pages) == i:
             reports_pages.append('')
     df['reports_page'] = reports_pages
