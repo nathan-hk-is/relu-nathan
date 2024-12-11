@@ -515,9 +515,11 @@ def getReportsPage(df):
     reports_pages = []
     rpby = {}
     rphr_s = ['annual report', 'integrated report', 'financial report',
-              'annual results', 'financial results']
+              'annual results', 'financial results', 'corporate report',
+              'company report']
     rphr_p = ['annual reports', 'integrated reports', 'financial reports',
-              'reports - ', 'reports | ']
+              'reports - ', 'reports | ', 'corporate reports',
+              'company reports']
     for i in range(df.shape[0]):
         if i % 100 == 0:
             print(i)
@@ -539,7 +541,7 @@ def getReportsPage(df):
             web_by = web_by[4:]
         driver.get('https://duckduckgo.com/?q=annual+financial+report+site:' +
                    web_by)
-        time.sleep(pause / 5)
+        time.sleep(pause / 10)
         xp = '//ol[@class="react-results--main"]/li[@data-layout="organic"]'
         # Wait to load
         while True:
@@ -553,7 +555,7 @@ def getReportsPage(df):
                     break
             except NoSuchElementException:
                 pass
-            time.sleep(pause / 5)
+            time.sleep(pause / 10)
         for wpage in results:
             try:
                 a = wpage.find_element(By.XPATH, './/h2/a')
@@ -572,8 +574,17 @@ def getReportsPage(df):
                        p + ' ' + str(y) in a.text.lower():
                         rpby[y][i] = href
                         break
-            if len(reports_pages) > i:
-                break
+            try:
+                snip = wpage.find_element(By.XPATH, './/div[@data-result='
+                                          '"snippet"]').text.split('.')[0]
+                for y in year_range:
+                    for p in rphr_s:
+                        if str(y) + ' ' + p == snip.lower() or \
+                           p + ' ' + str(y) == snip.lower():
+                            rpby[y][i] = href
+                            break
+            except NoSuchElementException:
+                continue
         if len(reports_pages) == i:
             reports_pages.append('')
     df['reports_page'] = reports_pages
