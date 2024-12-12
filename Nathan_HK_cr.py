@@ -516,10 +516,10 @@ def getReportsPage(df):
     rpby = {}
     rphr_s = ['annual report', 'integrated report', 'financial report',
               'annual results', 'financial results', 'corporate report',
-              'company report']
+              'company report', 'financial statements']
     rphr_p = ['annual reports', 'integrated reports', 'financial reports',
               'reports - ', 'reports | ', 'corporate reports',
-              'company reports']
+              'company reports', 'financial statement']
     for i in range(df.shape[0]):
         if i % 100 == 0:
             print(i)
@@ -573,7 +573,7 @@ def getReportsPage(df):
             for y in year_range:
                 try:
                     rpby[y][i]
-                    break
+                    continue
                 except KeyError:
                     pass
                 for p in rphr_s:
@@ -581,13 +581,15 @@ def getReportsPage(df):
                        p + ' ' + str(y) in a.text.lower():
                         rpby[y][i] = href
                         break
+                if 'year ' + str(y) + ' results' in a.text.lower():
+                    rpby[y][i] = href
             try:
                 snip = wpage.find_element(By.XPATH, './/div[@data-result='
                                           '"snippet"]').text.split('.')[0]
                 for y in year_range:
                     try:
                         rpby[y][i]
-                        break
+                        continue
                     except KeyError:
                         pass
                     for p in rphr_s:
@@ -595,6 +597,8 @@ def getReportsPage(df):
                            p + ' ' + str(y) == snip.lower():
                             rpby[y][i] = href
                             break
+                    if 'year ' + str(y) + ' results' in a.text.lower():
+                        rpby[y][i] = href
             except NoSuchElementException:
                 continue
             mod_href = href.lower().replace('%20', ' ').\
@@ -608,7 +612,7 @@ def getReportsPage(df):
             for y in year_range:
                 try:
                     rpby[y][i]
-                    break
+                    continue
                 except KeyError:
                     pass
                 for p in rphr_s:
@@ -616,6 +620,8 @@ def getReportsPage(df):
                        p + ' ' + str(y) in mod_href:
                         rpby[y][i] = href
                         break
+                if 'year ' + str(y) + ' results' in a.text.lower():
+                    rpby[y][i] = href
         if len(reports_pages) == i:
             reports_pages.append('')
     df['reports_page'] = reports_pages
