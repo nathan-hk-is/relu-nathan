@@ -2,7 +2,9 @@
 # 2024-11-30
 
 from bs4 import BeautifulSoup
+from datetime import datetime
 import geopy
+import json
 import numpy as np
 import pandas as pd
 import requests
@@ -659,6 +661,106 @@ def getReportsPage(df):
     print(time.time() - byrjun)
 
 
+def readNews(df):
+    """
+    Given a URL to a list of company news reports, extract the text and date
+    from each individual report.
+    """
+    byrjun = time.time()
+    try:
+        infile = open('news.json', 'r')
+        nj = json.load(infile)
+        infile.close()
+    except FileNotFoundError:
+        nj = {}
+    except json.JSONDecodeError:
+        nj = {}
+    for i in range(df.shape[0]):
+        if i % 100 == 0:
+            print(i)
+        if type(df.loc[i, 'news_page']) is not str:
+            continue
+        try:
+            svar = requests.get(df.loc[i, 'news_page'], timeout=pause * 10)
+        except requests.exceptions.SSLError:
+            print('SSL ERROR', i, df.loc[i, 'symbol'])
+            continue
+        except requests.exceptions.Timeout:
+            print('TIMEOUT', i, df.loc[i, 'symbol'])
+            continue
+        except requests.exceptions.ConnectionError:
+            print('CONNECTION ERROR', i, df.loc[i, 'symbol'])
+            continue
+        except requests.exceptions.MissingSchema:
+            print('MISSING SCHEMA', i, df.loc[i, 'symbol'])
+            continue
+        except requests.exceptions.TooManyRedirects:
+            print('REDIRECTS', i, df.loc[i, 'symbol'])
+            continue
+        except requests.exceptions.ChunkedEncodingError:
+            print('CHUNK', i, df.loc[i, 'symbol'])
+            continue
+        if svar.status_code >= 400:
+            continue
+        newslist = []
+        webpage = BeautifulSoup(svar.content, 'html.parser')
+        alist = webpage.find_all('a')
+        for a in alist:
+            try:
+                a['href']
+            except KeyError:
+                continue
+            except AttributeError:
+                continue
+            if a['href'][:len(svar.url)] == svar.url:
+                news_ind = {'url': a['href']}
+                try:
+                    nyttsvar = requests.get(a['href'], timeout=pause * 10)
+                except requests.exceptions.SSLError:
+                    print('SSL ERROR', i, df.loc[i, 'symbol'])
+                    continue
+                except requests.exceptions.Timeout:
+                    print('TIMEOUT', i, df.loc[i, 'symbol'])
+                    continue
+                except requests.exceptions.ConnectionError:
+                    print('CONNECTION ERROR', i, df.loc[i, 'symbol'])
+                    continue
+                except requests.exceptions.MissingSchema:
+                    print('MISSING SCHEMA', i, df.loc[i, 'symbol'])
+                    continue
+                except requests.exceptions.TooManyRedirects:
+                    print('REDIRECTS', i, df.loc[i, 'symbol'])
+                    continue
+                except requests.exceptions.ChunkedEncodingError:
+                    print('CHUNK', i, df.loc[i, 'symbol'])
+                    continue
+                if nyttsvar.status_code >= 400:
+                    continue
+                one_art = BeautifulSoup(nyttsvar.content, 'html.parser')
+                divlist = one_art.find_all('div')
+                dtxt = None
+                for div in divlist:
+                    try:
+                        div['class']
+                    except KeyError:
+                        continue
+                    for cl in div['class']:
+                        if 'date' in cl:
+                            dtxt = div.getText()
+                            break
+                    if dtxt is not None:
+                        break
+                if dtxt is None:
+                    continue
+                news_ind['date'] = dtxt
+                # EXPAND
+                newslist.append(news_ind)
+        nj[df.loc[i, 'symbol']] = newslist
+    with open('news.json', 'w') as outfile:
+        json.dump(nj, outfile, indent=4)
+    print(time.time() - byrjun)
+
+
 if __name__ == '__main__':
     if len(sys.argv) < 2:
         print('ERROR! Must include function name.')
@@ -672,5 +774,7 @@ if __name__ == '__main__':
         findNewsPage(df)
     elif sys.argv[1] == 'getReportsPage':
         getReportsPage(df)
+    elif sys.argv[1] == 'readNews':
+        readNews(df)
     else:
         print('ERROR! Invalid function name.')
