@@ -3,6 +3,7 @@
 
 from bs4 import BeautifulSoup
 from datetime import datetime
+import dateutil
 import geopy
 import json
 import numpy as np
@@ -683,22 +684,22 @@ def readNews(df):
         try:
             svar = requests.get(df.loc[i, 'news_page'], timeout=pause * 10)
         except requests.exceptions.SSLError:
-            print('SSL ERROR', i, df.loc[i, 'symbol'])
+            print('SSL ERROR A', i, df.loc[i, 'symbol'])
             continue
         except requests.exceptions.Timeout:
-            print('TIMEOUT', i, df.loc[i, 'symbol'])
+            print('TIMEOUT A', i, df.loc[i, 'symbol'])
             continue
         except requests.exceptions.ConnectionError:
-            print('CONNECTION ERROR', i, df.loc[i, 'symbol'])
+            print('CONNECTION ERROR A', i, df.loc[i, 'symbol'])
             continue
         except requests.exceptions.MissingSchema:
-            print('MISSING SCHEMA', i, df.loc[i, 'symbol'])
+            print('MISSING SCHEMA A', i, df.loc[i, 'symbol'])
             continue
         except requests.exceptions.TooManyRedirects:
-            print('REDIRECTS', i, df.loc[i, 'symbol'])
+            print('REDIRECTS A', i, df.loc[i, 'symbol'])
             continue
         except requests.exceptions.ChunkedEncodingError:
-            print('CHUNK', i, df.loc[i, 'symbol'])
+            print('CHUNK A', i, df.loc[i, 'symbol'])
             continue
         if svar.status_code >= 400:
             continue
@@ -717,28 +718,28 @@ def readNews(df):
                 try:
                     nyttsvar = requests.get(a['href'], timeout=pause * 10)
                 except requests.exceptions.SSLError:
-                    print('SSL ERROR', i, df.loc[i, 'symbol'])
+                    print('SSL ERROR B', i, df.loc[i, 'symbol'])
                     continue
                 except requests.exceptions.Timeout:
-                    print('TIMEOUT', i, df.loc[i, 'symbol'])
+                    print('TIMEOUT B', i, df.loc[i, 'symbol'])
                     continue
                 except requests.exceptions.ConnectionError:
-                    print('CONNECTION ERROR', i, df.loc[i, 'symbol'])
+                    print('CONNECTION ERROR B', i, df.loc[i, 'symbol'])
                     continue
                 except requests.exceptions.MissingSchema:
-                    print('MISSING SCHEMA', i, df.loc[i, 'symbol'])
+                    print('MISSING SCHEMA B', i, df.loc[i, 'symbol'])
                     continue
                 except requests.exceptions.TooManyRedirects:
-                    print('REDIRECTS', i, df.loc[i, 'symbol'])
+                    print('REDIRECTS B', i, df.loc[i, 'symbol'])
                     continue
                 except requests.exceptions.ChunkedEncodingError:
-                    print('CHUNK', i, df.loc[i, 'symbol'])
+                    print('CHUNK B', i, df.loc[i, 'symbol'])
                     continue
                 if nyttsvar.status_code >= 400:
                     continue
                 one_art = BeautifulSoup(nyttsvar.content, 'html.parser')
                 divlist = one_art.find_all('div')
-                dtxt = None
+                parsed = None
                 for div in divlist:
                     try:
                         div['class']
@@ -746,13 +747,24 @@ def readNews(df):
                         continue
                     for cl in div['class']:
                         if 'date' in cl:
-                            dtxt = div.getText()
+                            try:
+                                stripped = div.getText().strip()
+                                if df.loc[i, 'country'] in ['US', 'CA']:
+                                    parsed = dateutil.parser.\
+                                        parse(stripped, dayfirst=False)
+                                else:
+                                    parsed = dateutil.parser.\
+                                        parse(stripped, dayfirst=True)
+                            except dateutil.parser.ParserError:
+                                continue
+                            except ValueError:
+                                continue
                             break
-                    if dtxt is not None:
+                    if parsed is not None:
                         break
-                if dtxt is None:
+                if parsed is None:
                     continue
-                news_ind['date'] = dtxt
+                news_ind['date'] = parsed.date().isoformat()
                 # EXPAND
                 newslist.append(news_ind)
         nj[df.loc[i, 'symbol']] = newslist
