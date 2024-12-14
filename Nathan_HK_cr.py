@@ -704,6 +704,7 @@ def readNews(df):
         if svar.status_code >= 400:
             continue
         newslist = []
+        nl_urls = []
         webpage = BeautifulSoup(svar.content, 'html.parser')
         alist = webpage.find_all('a')
         for a in alist:
@@ -712,6 +713,10 @@ def readNews(df):
             except KeyError:
                 continue
             except AttributeError:
+                continue
+            if a['href'].split('?')[0] == svar.url:
+                continue
+            if a['href'] in nl_urls:
                 continue
             if a['href'][:len(svar.url)] == svar.url:
                 news_ind = {'url': a['href']}
@@ -738,7 +743,10 @@ def readNews(df):
                 if nyttsvar.status_code >= 400:
                     continue
                 one_art = BeautifulSoup(nyttsvar.content, 'html.parser')
-                divlist = one_art.find_all('div')
+                div_sim = ['div', 'span', 'h1', 'h2', 'h3', 'h4', 'h5']
+                divlist = []
+                for tag in div_sim:
+                    divlist += one_art.find_all(tag)
                 parsed = None
                 for div in divlist:
                     try:
@@ -767,6 +775,7 @@ def readNews(df):
                 news_ind['date'] = parsed.date().isoformat()
                 # EXPAND
                 newslist.append(news_ind)
+                nl_urls.append(news_ind['url'])
         nj[df.loc[i, 'symbol']] = newslist
     with open('news.json', 'w') as outfile:
         json.dump(nj, outfile, indent=4)
