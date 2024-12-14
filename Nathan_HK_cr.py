@@ -1,6 +1,7 @@
 # Nathan HK
 # 2024-11-30
 
+import bs4
 from bs4 import BeautifulSoup
 from datetime import datetime
 import dateutil
@@ -668,14 +669,7 @@ def readNews(df):
     from each individual report.
     """
     byrjun = time.time()
-    try:
-        infile = open('news.json', 'r')
-        nj = json.load(infile)
-        infile.close()
-    except FileNotFoundError:
-        nj = {}
-    except json.JSONDecodeError:
-        nj = {}
+    nj = {}
     for i in range(df.shape[0]):
         if i % 100 == 0:
             print(i)
@@ -701,7 +695,11 @@ def readNews(df):
         except requests.exceptions.ChunkedEncodingError:
             print('CHUNK A', i, df.loc[i, 'symbol'])
             continue
+        except requests.exceptions.InvalidSchema:
+            print('INVALID SCHEMA A', i, df.loc[i, 'symbol'])
+            continue
         if svar.status_code >= 400:
+            print('STATUS CODE A', i, df.loc[i, 'symbol'])
             continue
         newslist = []
         nl_urls = []
@@ -709,19 +707,24 @@ def readNews(df):
         alist = webpage.find_all('a')
         for a in alist:
             try:
-                a['href']
-            except KeyError:
-                continue
+                href = a['href']
+                if href[0] == '/':
+                    href = 'https://' + svar.url.split('/')[2] + href
             except AttributeError:
                 continue
-            if a['href'].split('?')[0] == svar.url:
+            except KeyError:
                 continue
-            if a['href'] in nl_urls:
+            except IndexError:
                 continue
-            if a['href'][:len(svar.url)] == svar.url:
-                news_ind = {'url': a['href']}
+            if href.split('?')[0] == svar.url:
+                continue
+            if href in nl_urls:
+                continue
+            if href[:len(svar.url)] == svar.url or \
+               a.text.strip().lower() == 'read more':
+                news_ind = {'url': href}
                 try:
-                    nyttsvar = requests.get(a['href'], timeout=pause * 10)
+                    nyttsvar = requests.get(href, timeout=pause * 10)
                 except requests.exceptions.SSLError:
                     print('SSL ERROR B', i, df.loc[i, 'symbol'])
                     continue
@@ -740,21 +743,38 @@ def readNews(df):
                 except requests.exceptions.ChunkedEncodingError:
                     print('CHUNK B', i, df.loc[i, 'symbol'])
                     continue
-                if nyttsvar.status_code >= 400:
+                except requests.exceptions.InvalidSchema:
+                    print('INVALID SCHEMA B', i, df.loc[i, 'symbol'])
                     continue
-                one_art = BeautifulSoup(nyttsvar.content, 'html.parser')
-                div_sim = ['div', 'span', 'h1', 'h2', 'h3', 'h4', 'h5']
+                if nyttsvar.status_code >= 400:
+                    print('STATUS CODE B', i, df.loc[i, 'symbol'])
+                    continue
+                try:
+                    one_art = BeautifulSoup(nyttsvar.content, 'html.parser')
+                except bs4.builder.ParserRejectedMarkup:
+                    continue
+                div_sim = ['time', 'div', 'span', 'h1', 'h2', 'h3', 'h4', 'h5']
                 divlist = []
                 for tag in div_sim:
                     divlist += one_art.find_all(tag)
                 parsed = None
                 for div in divlist:
                     try:
+                        if df.loc[i, 'country'] in ['US', 'CA']:
+                            parsed = dateutil.parser.\
+                                parse(div['datetime'], dayfirst=False)
+                        else:
+                            parsed = dateutil.parser.\
+                                parse(div['datetime'], dayfirst=True)
+                        break
+                    except KeyError:
+                        pass
+                    try:
                         div['class']
                     except KeyError:
                         continue
                     for cl in div['class']:
-                        if 'date' in cl:
+                        if 'date' in cl.lower():
                             try:
                                 stripped = div.getText().strip()
                                 if df.loc[i, 'country'] in ['US', 'CA']:
@@ -764,6 +784,8 @@ def readNews(df):
                                     parsed = dateutil.parser.\
                                         parse(stripped, dayfirst=True)
                             except dateutil.parser.ParserError:
+                                continue
+                            except dateutil.parser._parser.ParserError:
                                 continue
                             except ValueError:
                                 continue
