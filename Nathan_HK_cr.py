@@ -663,6 +663,93 @@ def getReportsPage(df):
     print(time.time() - byrjun)
 
 
+def oneNewsArt(href, i, df):
+    """
+    Parse an individual news article.
+    """
+    news_ind = {'url': href}
+    try:
+        nyttsvar = requests.get(href, timeout=pause * 10)
+    except requests.exceptions.SSLError:
+        print('SSL ERROR B', i, df.loc[i, 'symbol'])
+        return None
+    except requests.exceptions.Timeout:
+        print('TIMEOUT B', i, df.loc[i, 'symbol'])
+        return None
+    except requests.exceptions.ConnectionError:
+        print('CONNECTION ERROR B', i, df.loc[i, 'symbol'])
+        return None
+    except requests.exceptions.MissingSchema:
+        print('MISSING SCHEMA B', i, df.loc[i, 'symbol'])
+        return None
+    except requests.exceptions.TooManyRedirects:
+        print('REDIRECTS B', i, df.loc[i, 'symbol'])
+        return None
+    except requests.exceptions.ChunkedEncodingError:
+        print('CHUNK B', i, df.loc[i, 'symbol'])
+        return None
+    except requests.exceptions.InvalidSchema:
+        print('INVALID SCHEMA B', i, df.loc[i, 'symbol'])
+        return None
+    if nyttsvar.status_code >= 400:
+        print('STATUS CODE B', i, df.loc[i, 'symbol'])
+        return None
+    try:
+        one_art = BeautifulSoup(nyttsvar.content, 'html.parser')
+    except bs4.builder.ParserRejectedMarkup:
+        return None
+    div_sim = ['time', 'div', 'span', 'h1', 'h2', 'h3', 'h4', 'h5']
+    divlist = []
+    for tag in div_sim:
+        divlist += one_art.find_all(tag)
+    parsed = None
+    for div in divlist:
+        try:
+            if df.loc[i, 'country'] in ['US', 'CA']:
+                parsed = dateutil.parser.\
+                    parse(div['datetime'], dayfirst=False)
+            else:
+                parsed = dateutil.parser.\
+                    parse(div['datetime'], dayfirst=True)
+            break
+        except KeyError:
+            pass
+        except dateutil.parser.ParserError:
+            continue
+        except dateutil.parser._parser.ParserError:
+            continue
+        except ValueError:
+            continue
+        try:
+            div['class']
+        except KeyError:
+            continue
+        for cl in div['class']:
+            if 'date' in cl.lower():
+                try:
+                    stripped = div.getText().strip()
+                    if df.loc[i, 'country'] in ['US', 'CA']:
+                        parsed = dateutil.parser.\
+                            parse(stripped, dayfirst=False)
+                    else:
+                        parsed = dateutil.parser.\
+                            parse(stripped, dayfirst=True)
+                except dateutil.parser.ParserError:
+                    continue
+                except dateutil.parser._parser.ParserError:
+                    continue
+                except ValueError:
+                    continue
+                break
+        if parsed is not None:
+            break
+    if parsed is None:
+        return None
+    news_ind['date'] = parsed.date().isoformat()
+    # EXPAND
+    return news_ind
+
+
 def readNews(df):
     """
     Given a URL to a list of company news reports, extract the text and date
@@ -704,12 +791,40 @@ def readNews(df):
         newslist = []
         nl_urls = []
         webpage = BeautifulSoup(svar.content, 'html.parser')
+        alist = webpage.find_all('article')
+        for art in alist:
+            try:
+                href = a.find('a')['href']
+                if ':' not in href:
+                    if href[0] == '/':
+                        href = 'https://' + svar.url.split('/')[2] + href
+                    else:
+                        href = 'https://' + svar.url.split('/')[2] + '/' + href
+            except AttributeError:
+                continue
+            except KeyError:
+                continue
+            except IndexError:
+                continue
+            except TypeError:
+                continue
+            if href.split('?')[0] == svar.url:
+                continue
+            if href in nl_urls:
+                continue
+            news_ind = oneNewsArt(href, i, df)
+            if news_ind is not None:
+                newslist.append(news_ind)
+                nl_urls.append(news_ind['url'])
         alist = webpage.find_all('a')
         for a in alist:
             try:
                 href = a['href']
-                if href[0] == '/':
-                    href = 'https://' + svar.url.split('/')[2] + href
+                if ':' not in href:
+                    if href[0] == '/':
+                        href = 'https://' + svar.url.split('/')[2] + href
+                    else:
+                        href = 'https://' + svar.url.split('/')[2] + '/' + href
             except AttributeError:
                 continue
             except KeyError:
@@ -722,86 +837,28 @@ def readNews(df):
                 continue
             if href[:len(svar.url)] == svar.url or \
                a.text.strip().lower() == 'read more':
-                news_ind = {'url': href}
-                try:
-                    nyttsvar = requests.get(href, timeout=pause * 10)
-                except requests.exceptions.SSLError:
-                    print('SSL ERROR B', i, df.loc[i, 'symbol'])
+                news_ind = oneNewsArt(href, i, df)
+                if news_ind is not None:
+                    newslist.append(news_ind)
+                    nl_urls.append(news_ind['url'])
                     continue
-                except requests.exceptions.Timeout:
-                    print('TIMEOUT B', i, df.loc[i, 'symbol'])
-                    continue
-                except requests.exceptions.ConnectionError:
-                    print('CONNECTION ERROR B', i, df.loc[i, 'symbol'])
-                    continue
-                except requests.exceptions.MissingSchema:
-                    print('MISSING SCHEMA B', i, df.loc[i, 'symbol'])
-                    continue
-                except requests.exceptions.TooManyRedirects:
-                    print('REDIRECTS B', i, df.loc[i, 'symbol'])
-                    continue
-                except requests.exceptions.ChunkedEncodingError:
-                    print('CHUNK B', i, df.loc[i, 'symbol'])
-                    continue
-                except requests.exceptions.InvalidSchema:
-                    print('INVALID SCHEMA B', i, df.loc[i, 'symbol'])
-                    continue
-                if nyttsvar.status_code >= 400:
-                    print('STATUS CODE B', i, df.loc[i, 'symbol'])
-                    continue
-                try:
-                    one_art = BeautifulSoup(nyttsvar.content, 'html.parser')
-                except bs4.builder.ParserRejectedMarkup:
-                    continue
-                div_sim = ['time', 'div', 'span', 'h1', 'h2', 'h3', 'h4', 'h5']
-                divlist = []
-                for tag in div_sim:
-                    divlist += one_art.find_all(tag)
-                parsed = None
-                for div in divlist:
-                    try:
-                        if df.loc[i, 'country'] in ['US', 'CA']:
-                            parsed = dateutil.parser.\
-                                parse(div['datetime'], dayfirst=False)
-                        else:
-                            parsed = dateutil.parser.\
-                                parse(div['datetime'], dayfirst=True)
-                        break
-                    except KeyError:
-                        pass
-                    try:
-                        div['class']
-                    except KeyError:
-                        continue
-                    for cl in div['class']:
-                        if 'date' in cl.lower():
-                            try:
-                                stripped = div.getText().strip()
-                                if df.loc[i, 'country'] in ['US', 'CA']:
-                                    parsed = dateutil.parser.\
-                                        parse(stripped, dayfirst=False)
-                                else:
-                                    parsed = dateutil.parser.\
-                                        parse(stripped, dayfirst=True)
-                            except dateutil.parser.ParserError:
-                                continue
-                            except dateutil.parser._parser.ParserError:
-                                continue
-                            except ValueError:
-                                continue
-                            break
-                    if parsed is not None:
-                        break
-                if parsed is None:
-                    continue
-                news_ind['date'] = parsed.date().isoformat()
-                # EXPAND
-                newslist.append(news_ind)
-                nl_urls.append(news_ind['url'])
+            try:
+                for cl in a['class']:
+                    if 'article' in cl:
+                        news_ind = oneNewsArt(href, i, df)
+                        if news_ind is not None:
+                            newslist.append(news_ind)
+                            nl_urls.append(news_ind['url'])
+            except AttributeError:
+                continue
+            except KeyError:
+                continue
         nj[df.loc[i, 'symbol']] = newslist
     with open('news.json', 'w') as outfile:
         json.dump(nj, outfile, indent=4)
-    print(time.time() - byrjun)
+    print('\n= FINISHED =')
+    print('Time:', time.time() - byrjun)
+    print('Failure rate:', len([a for a in nj if len(nj[a]) == 0]) / len(nj))
 
 
 if __name__ == '__main__':
