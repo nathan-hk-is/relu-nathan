@@ -691,13 +691,25 @@ def oneNewsArt(href, i, df):
     except requests.exceptions.InvalidSchema:
         print('INVALID SCHEMA B', i, df.loc[i, 'symbol'])
         return None
+    except requests.exceptions.InvalidURL:
+        print('INVALID URL B', i, df.loc[i, 'symbol'])
+        return None
     if nyttsvar.status_code >= 400:
         print('STATUS CODE B', i, df.loc[i, 'symbol'])
         return None
     try:
         one_art = BeautifulSoup(nyttsvar.content, 'html.parser')
     except bs4.builder.ParserRejectedMarkup:
+        print('PRM B', i, df.loc[i, 'symbol'])
         return None
+    except AssertionError:
+        print('ASSERT B', i, df.loc[i, 'symbol'])
+        return None
+    main = one_art.find('div', {'id': 'main'})
+    if main is None:
+        main = one_art.find('div', {'class': 'main'})
+    if main is None:
+        main = one_art.find('div', {'class': 'pageContent'})
     div_sim = ['time', 'div', 'span', 'h1', 'h2', 'h3', 'h4', 'h5']
     divlist = []
     for tag in div_sim:
@@ -746,14 +758,33 @@ def oneNewsArt(href, i, df):
     if parsed is None:
         return None
     news_ind['date'] = parsed.date().isoformat()
-    # EXPAND
+    if main is None:
+        ps = one_art.find_all('p')
+    else:
+        ps = main.find_all('p')
+    art_text = ''
+    for p in ps:
+        art_text += p.text
+        art_text = art_text.strip()
+        art_text += ' '
+    news_ind['text'] = art_text.strip()
     return news_ind
 
 
 def readNews(df):
     """
-    Given a URL to a list of company news reports, extract the text and date
-    from each individual report.
+    Given a URL to a list of company news reports ("news_page"), extract the
+    text and date from each individual report ("ind_rep").
+
+    First, we try and get the main div (excluding headers and footers).
+
+    There are many extraneous links from the news page. Here is how we
+    determine the correct ones:
+    - Inside an <article> tag
+    - news_page URL is a substring of ind_rep URL
+    - news_page.class contains string "article"
+    - We get the template for each URL: split by slash, exclude final string.
+      Then, we see which templates have at least 10 URLs, and get those links.
     """
     byrjun = time.time()
     nj = {}
@@ -785,13 +816,24 @@ def readNews(df):
         except requests.exceptions.InvalidSchema:
             print('INVALID SCHEMA A', i, df.loc[i, 'symbol'])
             continue
+        except requests.exceptions.InvalidURL:
+            print('INVALID URL A', i, df.loc[i, 'symbol'])
+            return None
         if svar.status_code >= 400:
             print('STATUS CODE A', i, df.loc[i, 'symbol'])
             continue
         newslist = []
         nl_urls = []
         webpage = BeautifulSoup(svar.content, 'html.parser')
-        alist = webpage.find_all('article')
+        main = webpage.find('div', {'id': 'main'})
+        if main is None:
+            main = webpage.find('div', {'class': 'main'})
+        if main is None:
+            main = webpage.find('div', {'class': 'pageContent'})
+        if main is None:
+            alist = webpage.find_all('article')
+        else:
+            alist = main.find_all('article')
         for art in alist:
             try:
                 href = a.find('a')['href']
@@ -816,7 +858,11 @@ def readNews(df):
             if news_ind is not None:
                 newslist.append(news_ind)
                 nl_urls.append(news_ind['url'])
-        alist = webpage.find_all('a')
+        if main is None:
+            alist = webpage.find_all('a')
+        else:
+            alist = main.find_all('a')
+        url_snid = {}
         for a in alist:
             try:
                 href = a['href']
@@ -835,8 +881,13 @@ def readNews(df):
                 continue
             if href in nl_urls:
                 continue
-            if href[:len(svar.url)] == svar.url or \
-               a.text.strip().lower() == 'read more':
+            slash_s = tuple(href.split('/')[:-1])
+            try:
+                url_snid[slash_s] += 1
+            except KeyError:
+                url_snid[slash_s] = 1
+            anq = svar.url.split('?')[0]
+            if href[:len(anq)] == anq or a.text.strip().lower() == 'read more':
                 news_ind = oneNewsArt(href, i, df)
                 if news_ind is not None:
                     newslist.append(news_ind)
@@ -853,6 +904,34 @@ def readNews(df):
                 continue
             except KeyError:
                 continue
+        # 10 or more URL templates
+        for a in alist:
+            try:
+                href = a['href']
+                if ':' not in href:
+                    if href[0] == '/':
+                        href = 'https://' + svar.url.split('/')[2] + href
+                    else:
+                        href = 'https://' + svar.url.split('/')[2] + '/' + href
+            except AttributeError:
+                continue
+            except KeyError:
+                continue
+            except IndexError:
+                continue
+            if href.split('?')[0] == svar.url:
+                continue
+            if href in nl_urls:
+                continue
+            slash_one = tuple(href.split('/')[:-1])
+            if len(slash_one) == 0:
+                continue
+            if slash_one in url_snid and url_snid[slash_one] >= 10:
+                news_ind = oneNewsArt(href, i, df)
+                if news_ind is not None:
+                    newslist.append(news_ind)
+                    nl_urls.append(news_ind['url'])
+                    continue
         nj[df.loc[i, 'symbol']] = newslist
     with open('news.json', 'w') as outfile:
         json.dump(nj, outfile, indent=4)
